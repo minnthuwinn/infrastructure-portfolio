@@ -1,56 +1,60 @@
 # Architecture and content flows
 
-These are generalized logical diagrams, not physical deployment maps. Arrows are labeled by flow type; exact production routing and configurations are intentionally omitted.
+These generalized logical diagrams describe the reported architecture, not its physical deployment map. Production addresses, node counts and connection details are intentionally omitted.
 
 ## Live streaming
 
 ```mermaid
 flowchart TD
-    B[Broadcaster] -->|RTMP publish| R[NGINX streaming gateway]
-    subgraph G[Main delivery gateway]
-        R --> H[HLS packaging]
-        H --> S[Short-lived local segments and playlists]
+    B["Broadcaster"] -->|RTMP publish| R
+    subgraph G["Main NGINX delivery gateway"]
+        R["RTMP ingestion"] --> H["HLS packaging"]
+        H --> S["Temporary local playlists and segments"]
+        S --> W["HTTP delivery"]
     end
-    S -->|HTTP HLS delivery| V[Direct viewers]
+    W -->|HLS response| V["Direct viewers"]
 ```
 
-Live streams are packaged and served at the main gateway. Temporary HLS files are stored locally; long-term live archiving is outside this design.
+RTMP ingestion, HLS packaging, temporary local storage and HTTP delivery are on the same main gateway. Long-term live recording is outside the scope. HLS packaging is not a claim of video transcoding.
 
-## VOD content lifecycle
+## VOD ingestion and delivery
 
 ```mermaid
 flowchart TD
-    E[Separate encoding team] --> F[Encoded media files]
-    F --> U[SFTP upload]
-    F --> A[Administration web application]
-    U --> M[Persistent media storage]
+    E["Separate encoding team"] --> F["Encoded media files"]
+    F --> U["SFTP upload service"]
+    F --> A["Administration web application"]
+    U --> M["Persistent media storage"]
     A -->|NFS-mounted storage| M
-    M -->|NFS| O[Private origin layer]
-    O --> C[Private NGINX cache layer]
-    C --> L[Main streaming gateway]
-    L --> V[Direct viewers]
-    L --> D[Downstream delivery environment]
+    M -->|NFS| O["Private NGINX origin layer"]
+    O --> C["Private NGINX cache layer"]
+    C --> L["Main streaming gateway"]
+    L --> V["Direct viewers"]
+    L --> D["Downstream CDN environments"]
 ```
 
-Arrows in this diagram indicate content movement, not HTTP request direction. Media encoding is external to the delivery infrastructure. The administration application and SFTP service are externally reachable as required; the main cache and origin layers remain private.
+This diagram shows content movement rather than HTTP request direction. Media encoding is performed separately. Content is uploaded via SFTP or an administration application with access to mounted media storage. The main VOD cache and origin layers are private; required delivery and upload services are externally accessible.
 
 ## Distributed CDN request routing
 
 ```mermaid
 flowchart TD
-    V[Local viewers] -->|HTTP requests| A[Remote viewer-facing gateway]
-    A --> C[Remote NGINX cache pool]
-    C -->|Cache miss: upstream HTTP request| B[Remote upstream routing gateway]
-    C -. Cache-hit response via viewer-facing gateway .-> A
-    B -->|Inter-site routed traffic| N[Redundant network paths]
-    N --> M[Main-site gateway]
-    M --> L[Main NGINX streaming gateway]
-    L --> P[Main delivery backend as required]
-    A -. Mutual role takeover .- B
+    V["Local viewers"] -->|HTTP request| A["Remote viewer-facing load balancer"]
+    A -->|Proxy request| C["Remote NGINX cache pool"]
+    C -->|Upstream request when retrieval is required| B["Remote network routing gateway"]
+    B --> N["Redundant inter-site network paths"]
+    N --> M["Main-site network gateway"]
+    M --> L["Main NGINX delivery gateway"]
+    L -->|VOD request| P["Main private cache and origin layers"]
+    A ---|Mutual role takeover| B
 ```
 
-The remote NGINX cache uses the main NGINX streaming gateway as its upstream HTTP endpoint. The intervening remote gateway forwards network traffic; it is not assumed to be an additional HTTP proxy. Cache-hit responses travel back through the viewer-facing gateway to viewers. Some downstream environments also host their own content; their exact local routing is outside this overview.
+The remote cache nodes use the main NGINX delivery gateway as their upstream content endpoint, not the main origin or storage servers. The remote upstream gateway performs network forwarding; it is not depicted as an additional HTTP proxy. On a usable cache hit, the remote cache returns content through the viewer-facing load balancer without retrieving it again from the main site.
+
+Some downstream environments also deliver their own uploaded content. Their local origin and upload topology is omitted.
 
 ## Routing boundary
 
-OSPF operates in a single area among participating remote routing nodes and the main-site router. Main-site servers use static default routes to their gateway. Local main-site cache and origin traffic does not require inter-site dynamic routing.
+OSPF runs among participating remote routing nodes and the main-site network gateway. Main-site servers use static default routes. Local main-site cache and origin traffic does not depend on inter-site dynamic routing.
+
+The exact failover mechanism and protocol settings are outside the scope of these logical diagrams.
