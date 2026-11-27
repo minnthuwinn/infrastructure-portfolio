@@ -1,52 +1,71 @@
 # IP-001 — Multi-Site Live Streaming and VOD Delivery Infrastructure
 
-**Project type:** Anonymized production architecture case study  
-**Status:** Draft — pending author and confidentiality review
+**Project type:** Anonymized production architecture case study
 
-## Overview
+A Linux-based media delivery infrastructure combining live streaming, on-demand video, distributed CDN caching, resilient network routing, centralized monitoring and usage analytics.
 
-This case study describes my experience designing and operating Linux-based media delivery infrastructure for live and on-demand video. The architecture combines NGINX, distributed caching, private backend networks, dynamic routing, centralized logging and infrastructure monitoring.
+## Challenge
 
-The objective was to deliver centrally hosted media to viewers and downstream CDN environments while reducing repeated upstream content retrieval and maintaining operational visibility across sites.
+Deliver centrally hosted media to viewers and downstream delivery environments without unnecessary repeated upstream retrieval. Maintain visibility into infrastructure health and customer content usage, and provide alternate network paths when inter-site connectivity fails.
 
 ## My contribution
 
-My work included building and maintaining NGINX-based streaming and CDN infrastructure, including downstream CDN deployments. My responsibilities covered infrastructure design, implementation, routing, monitoring, usage reporting and troubleshooting. Video encoding was performed by a separate team; it was not part of my infrastructure implementation.
+I designed, implemented and maintained the NGINX-based streaming infrastructure, including downstream CDN deployments. My work encompassed Linux infrastructure, routing, monitoring, usage reporting and troubleshooting. A separate team handled video encoding; encoding software development and the content administration application's development are not claimed here.
 
-## Architecture
+## Architecture at a glance
 
-See [Architecture and content flows](architecture.md) for generalized diagrams of live delivery, VOD ingestion and distributed CDN routing.
+```mermaid
+flowchart TD
+    B["Broadcasters"] -->|RTMP| G["Main NGINX delivery gateway"]
+    V["Direct viewers"] -->|Live or VOD requests| G
+    G -->|Local live delivery| H["Temporary HLS media"]
+    G -->|VOD requests| C["Private CDN cache layer"]
+    C --> O["Private origin layer"]
+    O --> S["Persistent media storage"]
+    U["Content upload services"] -->|Write media| S
+    W["Remote viewers"] --> R["Downstream delivery gateways and caches"]
+    R -->|Upstream content requests| G
+    G -. Access logs .-> L["Graylog usage reporting"]
+    R -. Gateway access logs .-> L
+    Z["Zabbix monitoring"] -.-> G
+    Z -.-> R
+```
+
+Logical overview only. Request, upload and monitoring flows are distinguished by labels; inter-site network forwarding is abstracted. See [detailed architecture and content flows](architecture.md).
 
 | Layer | Technologies and responsibilities |
 | --- | --- |
-| Live delivery | NGINX RTMP ingestion, HLS packaging, short-lived local media files |
-| VOD delivery | NGINX load balancing, CDN caching and origin services |
+| Live delivery | NGINX RTMP, HLS packaging, temporary local media |
+| VOD delivery | NGINX load balancing, caching and origin services |
 | Content ingestion | SFTP and administration web application |
 | Storage | Persistent media storage and NFS |
-| Distributed delivery | Downstream cache nodes and local delivery gateways |
-| Network routing | Single-area OSPF across participating routing nodes; static routing at the main-site servers |
-| Usage analytics | Tagged NGINX logs, Graylog pipelines and aggregation |
+| Distributed delivery | Downstream disk caches and local delivery gateways |
+| Network | OSPF and redundant inter-site connectivity |
+| Usage analytics | Tagged NGINX logs and Graylog pipelines |
 | Monitoring | Zabbix infrastructure and service checks |
-| Notifications | Telegram operational alerts and periodic usage reports |
+| Notifications | Telegram alerts and monthly usage reports |
 
 ## Engineering decisions
 
-- Keep the main delivery cache and origin layers on private networks, while exposing the required streaming and content-ingestion services.
-- Separate short-lived live media from persistent VOD storage. Live packaging and direct delivery occur on the streaming gateway.
-- Use disk-based caching in downstream delivery environments. The main streaming gateway acts as their upstream content endpoint.
-- Separate viewer-facing load balancing from upstream gateway duties during normal operation; the paired remote gateways are designed to take over each other's responsibilities.
-- Use dynamic routing over redundant inter-site links to respond to upstream path failures even when local Ethernet remains up.
-- Classify access logs by domain and content path to generate customer-level usage reports.
-- Monitor infrastructure, network links, system resources, services and application endpoints centrally.
+| Decision | Rationale |
+| --- | --- |
+| Separate live media from persistent VOD storage | Short-lived live segments do not require long-term storage. |
+| Use a private cache and origin tier | Keep backend delivery services separate from externally accessible entry points. |
+| Cache content in downstream environments | Reuse locally stored content instead of repeatedly retrieving it upstream. |
+| Divide gateway roles during normal operation | Separate viewer-facing load balancing and upstream network forwarding, with mutual takeover designed for gateway failure. |
+| Use OSPF across redundant inter-site paths | Respond to route failures even when local Ethernet remains up. |
+| Aggregate access logs by content path and domain | Provide customer-oriented usage reporting without implementing billing. |
+| Monitor infrastructure and service endpoints centrally | Cover both system health and application availability. |
 
-## Operational perspective
+## Engineering scope and limitations
 
-The architecture addresses different failure domains: inter-site connectivity, delivery gateways, storage and application services. Network convergence and application recovery are distinct concerns. A route change does not by itself guarantee uninterrupted video playback.
+The design addresses network path failures, gateway redundancy, storage dependencies and operational visibility. Network convergence does not guarantee seamless video playback. No system-wide high availability or measured performance is claimed.
 
-See [Reliability and limitations](reliability.md) and [Monitoring and reporting](observability.md).
+- [Reliability and limitations](reliability.md)
+- [Monitoring and usage reporting](observability.md)
 
 ## Evidence and disclosure
 
-This case study is based on my reported production experience. It is not a newly executed lab, an independent audit or a benchmark. The diagrams are generalized and intentionally omit production addresses, exact node counts, customer identities, security rules and proprietary configurations. No measured cache hit ratios, availability percentages, convergence times or customer outcomes are claimed.
+This case study documents first-hand professional experience as described by its author. The documentation was checked for consistency with that account; production configurations, runtime behavior and performance were not independently audited or tested. The diagrams are generalized and omit addresses, exact node counts, customer identities, security rules and proprietary configurations.
 
-Detailed reproducible configuration examples and failure tests may be published separately using synthetic lab environments.
+No measured cache hit ratios, availability percentages, convergence times or customer outcomes are asserted. Detailed configuration examples and failure tests may be published separately using synthetic lab environments.
